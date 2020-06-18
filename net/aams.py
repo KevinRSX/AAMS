@@ -314,6 +314,10 @@ class AAMS():
         projected_style_features, style_kernels, mean_style_features = utils.project_features(style_hidden_feature, 'ZCA')
 
         attention_feature_map = AAMS.self_attention(projected_content_features, tf.shape(projected_content_features))
+
+        style_attention_feature_map = AAMS.self_attention(projected_style_features, tf.shape(projected_style_features))
+        attention_feature_map = utils.adaptive_instance_normalization(attention_feature_map, style_attention_feature_map)
+        
         projected_content_features = tf.multiply(projected_content_features, attention_feature_map) + projected_content_features
 
         attention_map = AAMS.attention_filter(attention_feature_map)
