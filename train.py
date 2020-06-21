@@ -39,35 +39,58 @@ def _get_init_fn():
         variables_to_restore,
         ignore_missing_vars=True)
 
+def _get_image_batch(dataset):
+    img_paths = glob.glob(os.path.join(dataset, "*.jpg"))
+
+    path_queue = tf.train.string_input_producer(img_paths, shuffle=True)
+
+    reader = tf.WholeFileReader()
+    paths, contents = reader.read(path_queue)
+    raw_img = tf.image.decode_jpeg(contents)
+    raw_img = 255.0 * tf.image.convert_image_dtype(raw_img, dtype=tf.float32)
+    image_clip = utils.preprocessing_image(
+        raw_img,
+        256, 256, 512,
+        is_training=True)
+    image_batch = tf.train.shuffle_batch([image_clip], batch_size=8, capacity=50000, num_threads=4,
+                                             min_after_dequeue=10000)
+    return image_batch
 
 if __name__ == "__main__":
     with tf.Graph().as_default():
         global_step = slim.create_global_step()
 
-        img_paths = glob.glob(os.path.join(args.dataset, "*.jpg"))
 
-        path_queue = tf.train.string_input_producer(img_paths, shuffle=True)
+        # img_paths = glob.glob(os.path.join(args.dataset, "*.jpg"))
 
-        reader = tf.WholeFileReader()
-        paths, contents = reader.read(path_queue)
-        raw_img = tf.image.decode_jpeg(contents)
-        raw_img = 255.0 * tf.image.convert_image_dtype(raw_img, dtype=tf.float32)
+        # path_queue = tf.train.string_input_producer(img_paths, shuffle=True)
 
-        image_clip = utils.preprocessing_image(
-            raw_img,
-            256, 256, 512,
-            is_training=True)
+        # reader = tf.WholeFileReader()
+        # paths, contents = reader.read(path_queue)
 
-        image_batch = tf.train.shuffle_batch([image_clip], batch_size=8, capacity=50000, num_threads=4,
-                                             min_after_dequeue=10000)
-  
+        # raw_img = tf.image.decode_jpeg(contents)
+        # raw_img = 255.0 * tf.image.convert_image_dtype(raw_img, dtype=tf.float32)
+
+        # image_clip = utils.preprocessing_image(
+        #     raw_img,
+        #     256, 256, 512,
+        #     is_training=True)
+
+        # image_batch = tf.train.shuffle_batch([image_clip], batch_size=8, capacity=50000, num_threads=4,
+        #                                      min_after_dequeue=10000)
+    
+        ###################################################### add style dataset ############################################
+        content_batch = _get_image_batch(args.dataset)
+        style_batch = _get_image_batch(args.styleset)
         model = aams.AAMS()
-        total_loss = model.build_graph(image_batch)
-        
+        total_loss = model.build_graph(content_batch) + model.build_graph(style_batch, scope = 'self_attention_style')
+        ######################################################        end        ############################################
+
+        ###################################################### add style scope ############################################
         summaries = set(tf.get_collection(tf.GraphKeys.SUMMARIES))
         update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS)
 
-        scopes = ['self_attention', 'decoder']
+        scopes = ['self_attention_content', 'self_attention_style' , 'decoder']
         
         variables_to_train = []
         for scope in scopes:
@@ -75,7 +98,7 @@ if __name__ == "__main__":
             variables_to_train.extend(variables)
         train_op = model.get_training_op(global_step, variables_to_train)
         update_ops.append(train_op)
-    
+        ######################################################        end        ##########################################
         summaries |= set(model.summaries)
 
         update_op = tf.group(*update_ops)

@@ -30,12 +30,13 @@ def freeze():
     style_image = tf.expand_dims(style_image, axis=0)
     
     # style transfer
-    stylized_image, attention_map, centroids = model.transfer(
+    stylized_image, content_attention_map, style_attention_map, centroids = model.transfer(
         content_image,
         style_image,
         inter_weight=inter_weight)
     stylized_image = tf.add(stylized_image, 0, name='stylized_output')
-    attention_map = tf.add(attention_map, 0, name='attention_map')
+    content_attention_map = tf.add(content_attention_map, 0, name='content_attention_map')
+    style_attention_map = tf.add(style_attention_map, 0, name='style_attention_map')
     centroids = tf.add(centroids, 0, name="centroids")
 
     init_op = tf.global_variables_initializer()
@@ -47,7 +48,7 @@ def freeze():
         restore_saver.restore(sess, args.ckpt_path)
         frozen_graph_def = tf.graph_util.convert_variables_to_constants(sess, sess.graph_def, \
                                                                         output_node_names=['stylized_output',
-                                                                                           'attention_map','centroids'])
+                                                                                           'content_attention_map', 'style_attention_map' , 'centroids'])
         
         with open(args.name, 'wb') as f:
             f.write(frozen_graph_def.SerializeToString())

@@ -53,7 +53,7 @@ class AAMS():
             return x + 127.5
 
     @staticmethod
-    def self_attention_autoencoder(x):
+    def self_attention_autoencoder(x, scope='self_attention_content'):
         input_features = utils.extract_image_features(x, False)
         tf.logging.debug(input_features['vgg_19/conv1/conv1_1'])
         tf.logging.debug(input_features['vgg_19/conv2/conv2_1'])
@@ -62,7 +62,7 @@ class AAMS():
 
         projected_hidden_feature, colorization_kernels, mean_features = utils.adain_normalization(input_features['vgg_19/conv4/conv4_1'])
 
-        attention_feature_map = AAMS.self_attention(projected_hidden_feature, tf.shape(projected_hidden_feature))
+        attention_feature_map = AAMS.self_attention(projected_hidden_feature, tf.shape(projected_hidden_feature), scope=scope)
         hidden_feature = tf.multiply(projected_hidden_feature, attention_feature_map) + projected_hidden_feature
        
         hidden_feature = utils.adain_colorization(hidden_feature, colorization_kernels, mean_features)
@@ -71,7 +71,7 @@ class AAMS():
         return output,  attention_feature_map
 
     @staticmethod
-    def self_attention(x, size, scope='self_attention', reuse=False):
+    def self_attention(x, size, scope='self_attention_content', reuse=False):
         tf.logging.debug(x)
     
         with tf.variable_scope(scope, reuse=reuse):
@@ -203,8 +203,8 @@ class AAMS():
     
         return finial_stylized_map, centroids
     
-    def build_graph(self, x):
-        output, attention_feature_map = self.self_attention_autoencoder(x)
+    def build_graph(self, x, scope='self_attention_content'):
+        output, attention_feature_map = self.self_attention_autoencoder(x, scope = scope)
         output = utils.batch_mean_image_subtraction(output)
         summaries = set(tf.get_collection(tf.GraphKeys.SUMMARIES))
         
@@ -313,18 +313,20 @@ class AAMS():
         projected_content_features, _, _ = utils.project_features(content_hidden_feature, 'ZCA')
         projected_style_features, style_kernels, mean_style_features = utils.project_features(style_hidden_feature, 'ZCA')
 
-        attention_feature_map = AAMS.self_attention(projected_content_features, tf.shape(projected_content_features))
+        # content attention
+        content_attention_feature_map = AAMS.self_attention(projected_content_features, tf.shape(projected_content_features))
+        projected_content_features = tf.multiply(projected_content_features, content_attention_feature_map) + projected_content_features
+        content_attention_map = AAMS.attention_filter(content_attention_feature_map)
 
-        style_attention_feature_map = AAMS.self_attention(projected_style_features, tf.shape(projected_style_features))
-        attention_feature_map = utils.adaptive_instance_normalization(attention_feature_map, style_attention_feature_map)
+        # style attention
+        style_attention_feature_map = AAMS.self_attention(projected_style_features, tf.shape(projected_style_features), scope = 'self_attention_style')
+        style_attention_map = AAMS.attention_filter(style_attention_feature_map)
+        # attention_feature_map = utils.adaptive_instance_normalization(attention_feature_map, style_attention_feature_map)        
         
-        projected_content_features = tf.multiply(projected_content_features, attention_feature_map) + projected_content_features
-
-        attention_map = AAMS.attention_filter(attention_feature_map)
-
+        # multi-scale style swap
         multi_swapped_features = AAMS.multi_scale_style_swap(projected_content_features, projected_style_features)
 
-        fused_features, centroids = AAMS.multi_stroke_fusion(multi_swapped_features, attention_map, theta=50.0)
+        fused_features, centroids = AAMS.multi_stroke_fusion(multi_swapped_features, content_attention_map, theta=50.0)
 
         fused_features = inter_weight * fused_features + \
                               (1 - inter_weight) * projected_content_features
@@ -336,7 +338,7 @@ class AAMS():
             'ZCA'
         )
         output = AAMS.decode(reconstructed_features, style_features)
-        return output, attention_map, centroids
+        return output, content_attention_map, style_attention_map, centroids
     
  
 

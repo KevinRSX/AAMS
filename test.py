@@ -33,7 +33,8 @@ def single_img_test(model_path, content_path, style_path, inter_weight_value=1.0
     content = tf.get_default_graph().get_tensor_by_name("content:0")
     style = tf.get_default_graph().get_tensor_by_name("style:0")
     output = tf.get_default_graph().get_tensor_by_name("stylized_output:0")
-    attention = tf.get_default_graph().get_tensor_by_name('attention_map:0')
+    content_attention = tf.get_default_graph().get_tensor_by_name('content_attention_map:0')
+    style_attention = tf.get_default_graph().get_tensor_by_name('style_attention_map:0')
     inter_weight = tf.get_default_graph().get_tensor_by_name("inter_weight:0")
     centroids = tf.get_default_graph().get_tensor_by_name("centroids:0")
     content_feed = image_reader(content_path)
@@ -48,7 +49,7 @@ def single_img_test(model_path, content_path, style_path, inter_weight_value=1.0
         else:
             content_feed = cv2.resize(content_feed, (max_length, max_length * h / w))
     
-    output_value, attention_value, centroids_value = sess.run([output, attention, centroids], feed_dict={content: content_feed,
+    output_value, content_attention_value, style_attention_value, centroids_value = sess.run([output, content_attention, style_attention, centroids], feed_dict={content: content_feed,
                                                                         style: style_feed,
                                                                         inter_weight: inter_weight_value
                                                                         })
@@ -56,7 +57,8 @@ def single_img_test(model_path, content_path, style_path, inter_weight_value=1.0
     print('content size:', np.shape(content_feed))
     print('style size:', np.shape(style_feed))
     print('output size:', np.shape(output_value))
-    print('attention size:', np.shape(attention_value))
+    print('content attention size:', np.shape(content_attention_value))
+    print('style attention size:', np.shape(style_attention_value))
     print('centroids',centroids_value)
 
     prepare_dir('images/test_result')
@@ -71,12 +73,12 @@ def single_img_test(model_path, content_path, style_path, inter_weight_value=1.0
     imsave(filename, output_image.astype(np.uint8))
     print('saving {}'.format(filename))
     
-    ''' save attention map'''
+    ''' save content attention map'''
     mean_sal = 0
-    for i in xrange(attention_value.shape[3]):
-        mean_sal += attention_value[0, :, :, i]
+    for i in xrange(content_attention_value.shape[3]):
+        mean_sal += content_attention_value[0, :, :, i]
     
-    mean_sal = mean_sal * 1.0 / attention_value.shape[3]
+    mean_sal = mean_sal * 1.0 / content_attention_value.shape[3]
     
     from matplotlib import pyplot as plt
     from matplotlib import cm
@@ -90,12 +92,36 @@ def single_img_test(model_path, content_path, style_path, inter_weight_value=1.0
     plt.axis('off')
  
     print('mean_sal size:', np.shape(mean_sal))
-    filename = 'images/test_result/{}_mean_atten.png'.format(
+    filename = 'images/test_result/{}_mean_atten_content.png'.format(
         content_path.split('/')[-1].split('.')[0])
     
     plt.savefig(filename, bbox_inches="tight")
-    print('attention mean:{}, min:{}, max:{}'.format(np.mean(mean_sal), np.min(mean_sal), np.max(mean_sal)))
+    print('content attention mean:{}, min:{}, max:{}'.format(np.mean(mean_sal), np.min(mean_sal), np.max(mean_sal)))
  
+    ''' save style attention map'''
+    mean_sal = 0
+    for i in xrange(style_attention_value.shape[3]):
+        mean_sal += style_attention_value[0, :, :, i]
+    
+    mean_sal = mean_sal * 1.0 / style_attention_value.shape[3]
+    
+    plt.switch_backend('agg')
+    
+    mean_sal = mean_sal - np.min(mean_sal)
+    mean_sal = mean_sal * 1.0 / np.max(mean_sal)
+    
+    plt.imshow(mean_sal, cmap=cm.get_cmap('rainbow', 1000))
+    plt.colorbar()
+    plt.axis('off')
+ 
+    print('mean_sal size:', np.shape(mean_sal))
+    filename = 'images/test_result/{}_mean_atten_style.png'.format(
+        content_path.split('/')[-1].split('.')[0])
+    
+    plt.savefig(filename, bbox_inches="tight")
+    print('content attention mean:{}, min:{}, max:{}'.format(np.mean(mean_sal), np.min(mean_sal), np.max(mean_sal)))
+ 
+
     sess.close()
     
     print('single image test done')
